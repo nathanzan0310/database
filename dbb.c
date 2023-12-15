@@ -4,30 +4,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "comm.h"
 
-#include "./comm.h"
 #include "./db.h"
 
 #define MAXLEN 256
 
-// The root node of the binary tree, unlike all
-// other nodes in the tree, this one is never
-// freed (it's allocated in the data region).
-node_t head = {"", "", 0, 0, PTHREAD_RWLOCK_INITIALIZER};
-
-void lock(pthread_rwlock_t *rwlock, enum locktype lt) {
-    // lt of 0 means l_read, while lt of 1 means l_write
+void lock(int lt, pthread_rwlock_t *lk) {
     int err;
-    assert(lt == l_read || lt == l_write);
-    if (lt == l_read) {
-        if ((err = pthread_rwlock_rdlock(rwlock)))
+    if ((lt) == l_read) {
+        if ((err = pthread_rwlock_rdlock(lk))) {
             handle_error_en(err, "pthread_rwlock_rdlock");
+        }
     } else {
-        if ((err = pthread_rwlock_wrlock(rwlock))) {
+        if ((err = pthread_rwlock_wrlock(lk))) {
             handle_error_en(err, "pthread_rwlock_wrlock");
         }
     }
 }
+// The root node of the binary tree, unlike all
+// other nodes in the tree, this one is never
+// freed (it's allocated in the data region).
+node_t head = {"", "", 0, 0, PTHREAD_RWLOCK_INITIALIZER};
 
 //------------------------------------------------------------------------------------------------
 // Constructor, destructor, and cleanup methods
@@ -65,15 +63,15 @@ node_t *node_constructor(char *arg_key, char *arg_value, node_t *arg_left,
         free(new_node);
         return 0;
     }
+
     new_node->lchild = arg_left;
     new_node->rchild = arg_right;
-
     int err;
-    if ((err = pthread_rwlock_init(&new_node->rw_lock, 0)) != 0) {
+    if ((err = pthread_rwlock_init(&new_node->rw_lock, 0))) {
         free(new_node->value);
         free(new_node->key);
         free(new_node);
-        handle_error_en(err, "pthread_rwlock_init");
+        handle_error_en(err, "rwlock init");
     }
     return new_node;
 }
@@ -81,10 +79,11 @@ node_t *node_constructor(char *arg_key, char *arg_value, node_t *arg_left,
 void node_destructor(node_t *node) {
     if (node->key != NULL) free(node->key);
     if (node->value != NULL) free(node->value);
-
     int err;
-    if ((err = pthread_rwlock_destroy(&node->rw_lock)) != 0)
-        handle_error_en(err, "pthread_rwlock_destroy");
+    if ((err = (pthread_rwlock_destroy(&node->rw_lock)))) {
+        free(node);
+        handle_error_en(err, "rwlock destroy");
+    }
     free(node);
 }
 
@@ -113,7 +112,6 @@ node_t *search(char *key, node_t *parent, node_t **parentpp, enum locktype lt) {
      * TODO:
      * Part 2: Make this thread safe!
      */
-    int err;
     node_t *next;
     if (strcmp(key, parent->key) < 0) {
         next = parent->lchild;
@@ -122,26 +120,29 @@ node_t *search(char *key, node_t *parent, node_t **parentpp, enum locktype lt) {
     }
 
     node_t *result;
+    int err;
     if (next == NULL) {
         result = NULL;
     } else {
-        lock(&next->rw_lock, lt);
+        lock(lt, &next->rw_lock);
         if (strcmp(key, next->key) == 0) {
             result = next;
         } else {
-            if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+            if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
                 handle_error_en(err, "pthread_rwlock_unlock");
-            return search(key, next, parentpp, 0);
+            }
+            return search(key, next, parentpp, lt);
         }
     }
 
     if (parentpp != NULL) {
         *parentpp = parent;
     } else {
-        if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+        if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
-        //        return result;
+        }
     }
+
     return result;
 }
 
@@ -150,15 +151,13 @@ void db_query(char *key, char *result, int len) {
      * TODO:
      * Part 2: Make this thread safe!
      */
-    lock(&head.rw_lock, l_read);
-    node_t *target = search(key, &head, NULL, 0);
+    lock(l_read, &head.rw_lock);
+    node_t *target = search(key, &head, NULL, l_read);
     if (target == NULL) {
         snprintf(result, len, "not found");
     } else {
         snprintf(result, len, "%s", target->value);
-        int err;
-        if ((err = pthread_rwlock_unlock(&target->rw_lock)))
-            handle_error_en(err, "pthread_rwlock_unlock");
+        pthread_rwlock_unlock(&target->rw_lock);
     }
 }
 
@@ -167,15 +166,18 @@ int db_add(char *key, char *value) {
      * TODO:
      * Part 2: Make this thread safe!
      */
-    int err;
     node_t *parent;
     node_t *target;
-    lock(&head.rw_lock, 1);
-    if ((target = search(key, &head, &parent, 1)) != NULL) {
-        if ((err = pthread_rwlock_unlock(&target->rw_lock)))
+    int err;
+    lock(1, &head.rw_lock);
+    if ((target = search(key, &head, &parent, l_write)) != NULL) {
+        if ((err = pthread_rwlock_unlock(&target->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
-        if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+            exit(1);
+        }
+        if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
+        }
         return 0;
     }
 
@@ -186,8 +188,10 @@ int db_add(char *key, char *value) {
     else
         parent->rchild = newnode;
 
-    if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+    if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
         handle_error_en(err, "pthread_rwlock_unlock");
+    }
+
     return 1;
 }
 
@@ -196,16 +200,17 @@ int db_remove(char *key) {
      * TODO:
      * Part 2: Make this thread safe!
      */
-    int err;
     node_t *parent;  // parent of the node to delete
     node_t *dnode;   // node to delete
+    int err;
 
-    lock(&head.rw_lock, 1);
     // first, find the node to be removed
-    if ((dnode = search(key, &head, &parent, 1)) == NULL) {
+    lock(1, &head.rw_lock);
+    if ((dnode = search(key, &head, &parent, l_write)) == NULL) {
         // it's not there
-        if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+        if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
+        }
         return 0;
     }
 
@@ -217,10 +222,14 @@ int db_remove(char *key) {
             parent->lchild = dnode->lchild;
         else
             parent->rchild = dnode->lchild;
-        if ((err = pthread_rwlock_unlock(&dnode->rw_lock)))
+
+        if ((err = pthread_rwlock_unlock(&dnode->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
-        if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+        }
+        if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
+        }
+
         // done with dnode
         node_destructor(dnode);
     } else if (dnode->lchild == NULL) {
@@ -229,10 +238,13 @@ int db_remove(char *key) {
             parent->lchild = dnode->rchild;
         else
             parent->rchild = dnode->rchild;
-        if ((err = pthread_rwlock_unlock(&dnode->rw_lock)))
+
+        if ((err = pthread_rwlock_unlock(&dnode->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
-        if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+        }
+        if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
+        }
         // done with dnode
         node_destructor(dnode);
     } else {
@@ -240,21 +252,24 @@ int db_remove(char *key) {
         // replace the node to be deleted with that node. This new node thus is
         // lexicographically smaller than all nodes in its right subtree, and
         // greater than all nodes in its left subtree
-        if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
+
+        if ((err = pthread_rwlock_unlock(&parent->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
+        }
 
         node_t *next = dnode->rchild;
-        lock(&next->rw_lock, 1);
+        lock(l_write, &next->rw_lock);
         node_t **pnext = &dnode->rchild;
 
         while (next->lchild != NULL) {
             // work our way down the lchild chain, finding the smallest node
             // in the subtree.
             node_t *nextl = next->lchild;
-            lock(&nextl->rw_lock, 1);
+            lock(l_write, &nextl->rw_lock);
             pnext = &next->lchild;
-            if ((err = pthread_rwlock_unlock(&next->rw_lock)))
+            if ((err = pthread_rwlock_unlock(&next->rw_lock))) {
                 handle_error_en(err, "pthread_rwlock_unlock");
+            }
             next = nextl;
         }
 
@@ -268,13 +283,13 @@ int db_remove(char *key) {
         snprintf(dnode->key, MAXLEN, "%s", next->key);
         snprintf(dnode->value, MAXLEN, "%s", next->value);
 
-        if ((err = pthread_rwlock_unlock(&next->rw_lock)))
+        if ((err = pthread_rwlock_unlock(&next->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
-
+        }
         node_destructor(next);
-
-        if ((err = pthread_rwlock_unlock(&dnode->rw_lock)))
+        if ((err = pthread_rwlock_unlock(&dnode->rw_lock))) {
             handle_error_en(err, "pthread_rwlock_unlock");
+        }
     }
 
     return 1;
@@ -297,23 +312,24 @@ void db_print_recurs(node_t *node, int lvl, FILE *out) {
      */
     int err;
     print_spaces(lvl, out);  // print spaces to differentiate levels
+
     // print node's key/value, or (root) if it's the root
     if (node == NULL) {
         fprintf(out, "(null)\n");
         return;
     }
-
-    lock(&node->rw_lock, 0);
-
-    if (node == &head)
+    lock(0, &node->rw_lock);
+    if (node == &head) {
         fprintf(out, "(root)\n");
-    else
+    } else {
         fprintf(out, "%s %s\n", node->key, node->value);
+    }
 
     db_print_recurs(node->lchild, lvl + 1, out);
     db_print_recurs(node->rchild, lvl + 1, out);
-    if ((err = pthread_rwlock_unlock(&node->rw_lock)))
+    if ((err = pthread_rwlock_unlock(&node->rw_lock))) {
         handle_error_en(err, "pthread_rwlock_unlock");
+    }
 }
 
 int db_print(char *filename) {

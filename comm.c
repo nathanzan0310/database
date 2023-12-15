@@ -18,8 +18,8 @@ static void *listener(void (*server)(FILE *));
 
 static int comm_port;
 
-/* Notice that this function takes in an argument `server`, which is a function 
-   that takes in a file pointer. What function have you 
+/* Notice that this function takes in an argument `server`, which is a function
+   that takes in a file pointer. What function have you
    implemented that has a file pointer as an argument? */
 pthread_t start_listener(int port, void (*server)(FILE *)) {
     comm_port = port;
@@ -29,7 +29,7 @@ pthread_t start_listener(int port, void (*server)(FILE *)) {
     if ((err = pthread_create(&tid, 0, (void *(*)(void *))listener,
                               (void *)server)))
         handle_error_en(err, "pthread_create");
- 
+
     return tid;
 }
 

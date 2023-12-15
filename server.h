@@ -12,6 +12,14 @@ typedef struct server_control {
 } server_control_t;
 
 /*
+ * Indicates whether the server can accept new clients
+ */
+typedef struct server_accept_control {
+    pthread_mutex_t accept_mutex;
+    int accepting;
+} server_accept_control_t;
+
+/*
  * Controls when the clients in the client thread list should be stopped and
  * let go.
  */
@@ -42,7 +50,6 @@ typedef struct sig_handler {
     sigset_t set;
     pthread_t thread;
 } sig_handler_t;
-
 
 // Client threads' constructor and main method
 void client_constructor(FILE *cxstr);
