@@ -110,6 +110,7 @@ void *run_client(void *arg) {
     }
     client->prev = NULL;
     thread_list_head = client;
+
     pthread_cleanup_push((void *)&thread_cleanup, &client_control.go_mutex);
     pthread_mutex_unlock(&thread_list_mutex);
     pthread_mutex_lock(&server_control.server_mutex);
@@ -119,7 +120,9 @@ void *run_client(void *arg) {
         client_control_wait();
         interpret_command(command, response, BUFLEN);
     }
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0);
+    int err;
+    if ((err = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0)))
+        handle_error_en(err, "pthread_setcancelstate");
     pthread_cleanup_pop(1);
     return NULL;
 }
