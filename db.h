@@ -8,9 +8,14 @@ typedef struct node {
     char *value;
     struct node *lchild;
     struct node *rchild;
+    pthread_rwlock_t rw_lock;
 } node_t;
 
 extern node_t head;
+
+enum locktype {
+    l_read = 0, l_write = 1
+};
 
 /**
   * The search() function searches the tree, starting at parent, for a node
@@ -22,7 +27,7 @@ extern node_t head;
   * parent of the target node, if it were there.
   * Returns the found node on success and NULL on failure. 
   */
-node_t *search(char *key, node_t *parent, node_t **parentp);
+node_t *search(char *key, node_t *parent, node_t **parentp, enum locktype lt);
 
 /**
   * The db_query() function calls search() to retrieve the node associated with the 
