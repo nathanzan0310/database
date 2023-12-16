@@ -188,6 +188,7 @@ int db_add(char *key, char *value) {
 
     if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
         handle_error_en(err, "pthread_rwlock_unlock");
+
     return 1;
 }
 
