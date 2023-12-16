@@ -93,7 +93,7 @@ void *run_client(void *arg) {
     client_t *client = arg;
     if (server_accept_control.accepting == 0) {
         client_destructor(client);
-        return (void *) -1;
+        return (void *)-1;
     }
 
     char response[BUFLEN];
@@ -111,18 +111,18 @@ void *run_client(void *arg) {
     client->prev = NULL;
     thread_list_head = client;
 
-    pthread_cleanup_push((void *) &thread_cleanup, client);
-        pthread_mutex_unlock(&thread_list_mutex);
-        pthread_mutex_lock(&server_control.server_mutex);
-        server_control.num_client_threads++;
-        pthread_mutex_unlock(&server_control.server_mutex);
-        while (comm_serve(client->cxstr, response, command) == 0) {
-            client_control_wait();
-            interpret_command(command, response, BUFLEN);
-        }
-        int err;
-        if ((err = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0)))
-            handle_error_en(err, "pthread_setcancelstate");
+    pthread_cleanup_push((void *)&thread_cleanup, client);
+    pthread_mutex_unlock(&thread_list_mutex);
+    pthread_mutex_lock(&server_control.server_mutex);
+    server_control.num_client_threads++;
+    pthread_mutex_unlock(&server_control.server_mutex);
+    while (comm_serve(client->cxstr, response, command) == 0) {
+        client_control_wait();
+        interpret_command(command, response, BUFLEN);
+    }
+    int err;
+    if ((err = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0)))
+        handle_error_en(err, "pthread_setcancelstate");
     pthread_cleanup_pop(1);
     return NULL;
 }
@@ -159,10 +159,10 @@ void thread_cleanup(void *arg) {
     if (client == thread_list_head) {
         thread_list_head = NULL;
     }
-    if (next){
+    if (next) {
         next->prev = prev;
     }
-    if (prev){
+    if (prev) {
         prev->next = next;
     }
     pthread_mutex_unlock(&thread_list_mutex);
@@ -211,13 +211,13 @@ void client_control_wait() {
      */
     int err;
     pthread_mutex_lock(&client_control.go_mutex);
-    pthread_cleanup_push((void *) &pthread_mutex_unlock,
+    pthread_cleanup_push((void *)&pthread_mutex_unlock,
                          &client_control.go_mutex);
-        while (!client_control.stopped) {
-            if ((err = pthread_cond_wait(&client_control.go,
-                                         &client_control.go_mutex)))
-                handle_error_en(err, "pthread_cond_wait");
-        }
+    while (!client_control.stopped) {
+        if ((err = pthread_cond_wait(&client_control.go,
+                                     &client_control.go_mutex)))
+            handle_error_en(err, "pthread_cond_wait");
+    }
     pthread_cleanup_pop(1);
 }
 
@@ -266,7 +266,7 @@ void *monitor_signal(void *arg) {
      */
     int sig = 0;
     while (1) {
-        if (sigwait((sigset_t *) arg, &sig)) {
+        if (sigwait((sigset_t *)arg, &sig)) {
             perror("sigwait");
             exit(1);
         }
@@ -285,7 +285,7 @@ sig_handler_t *sig_handler_constructor() {
      * (use `pthread_sigmask`!). Be sure to take a look at sig_hander_t in
      * server.h.
      */
-    sig_handler_t *sig_thread = (sig_handler_t *) malloc(sizeof(sig_handler_t));
+    sig_handler_t *sig_thread = (sig_handler_t *)malloc(sizeof(sig_handler_t));
     if (sig_thread == NULL) {
         perror("malloc failed");
         exit(1);
@@ -330,14 +330,14 @@ int main(int argc, char *argv[]) {
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGPIPE);
-    sig_handler_t* sig_handler = sig_handler_constructor();
+    sig_handler_t *sig_handler = sig_handler_constructor();
     if ((err = pthread_sigmask(SIG_BLOCK, &set, 0)) != 0)
         handle_error_en(err, "pthread_sigmask");
-    if(argc != 2) {
+    if (argc != 2) {
         fprintf(stderr, "Usage: %s <port number>\n", argv[0]);
         exit(1);
     }
-    int port = (int) strtol(argv[1], 0, 10);
+    int port = (int)strtol(argv[1], 0, 10);
     pthread_t lThread = start_listener(port, &client_constructor);
 
     /*
