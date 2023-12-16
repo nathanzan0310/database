@@ -24,6 +24,7 @@ enum locktype: I defined a new enum locktype in db.h that can take either l_read
 
 Bugs: None to my knowledge after extensive testing
 
-Program structure: I implemented fine-grained locking in db.c. I made all required functions thread-safe. In main of 
-server.c, I blocked SIGPIPE and set up the listener and signal thread before I coded my mini-shell. If EOF is received, 
-the server will terminate cleanly with the code that I set up after the command while loop.
+Program structure: I implemented fine-grained locking in db.c. I also implemented the required functions in server.c
+in a way that is threadsafe. In main of server.c, I blocked SIGPIPE and set up the listener and signal thread before I 
+coded my mini-shell. If EOF is received, the server will terminate cleanly with the code that I set up after the command 
+while loop.

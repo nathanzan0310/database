@@ -389,6 +389,7 @@ int main(int argc, char *argv[]) {
             exit(0);
         }
     }
+    sig_handler_destructor(sig_handler);
     delete_all();
     pthread_mutex_lock(&server_control.server_mutex);
     while (server_control.num_client_threads)
@@ -413,7 +414,6 @@ int main(int argc, char *argv[]) {
         handle_error_en(errno, "pthread_cond_destroy");
     if (pthread_mutex_destroy(&thread_list_mutex))
         handle_error_en(errno, "pthread_mutex_destroy");
-    sig_handler_destructor(sig_handler);
     pthread_exit(0);
 
     /*

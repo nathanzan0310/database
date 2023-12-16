@@ -27,4 +27,5 @@ command is set to the response put in the given file. If cxstr is closed then th
 
 6. Describe, in detail, what happens during each iteration of the while loop in the listener function. Be sure to include explanations of all significant function calls.
 During each iteration, a client sock is accepted from the start of the queue in listen sock. It then prints information about the client giving the IP address and
-port number and converts the accepted sock to a file stream. It then calls the server with the file stream as the argument, and runs the client.
+port number and converts the accepted sock to a file stream. It then calls the server with the file stream as the argument, and runs the client. The server will handle
+multiple concurrent client connections.
