@@ -62,9 +62,6 @@ node_t *node_constructor(char *arg_key, char *arg_value, node_t *arg_left,
         free(new_node);
         return 0;
     }
-    new_node->lchild = arg_left;
-    new_node->rchild = arg_right;
-
     int err;
     if ((err = pthread_rwlock_init(&new_node->rw_lock, 0)) != 0) {
         free(new_node->value);
@@ -72,16 +69,17 @@ node_t *node_constructor(char *arg_key, char *arg_value, node_t *arg_left,
         free(new_node);
         handle_error_en(err, "pthread_rwlock_init");
     }
+    new_node->lchild = arg_left;
+    new_node->rchild = arg_right;
     return new_node;
 }
 
 void node_destructor(node_t *node) {
-    if (node->key != NULL) free(node->key);
-    if (node->value != NULL) free(node->value);
-
     int err;
     if ((err = pthread_rwlock_destroy(&node->rw_lock)) != 0)
         handle_error_en(err, "pthread_rwlock_destroy");
+    if (node->key != NULL) free(node->key);
+    if (node->value != NULL) free(node->value);
     free(node);
 }
 

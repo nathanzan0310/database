@@ -388,8 +388,8 @@ int main(int argc, char *argv[]) {
             perror("printf");
             exit(0);
         }
+        sig_handler_destructor(sig_handler);
     }
-    sig_handler_destructor(sig_handler);
     delete_all();
     pthread_mutex_lock(&server_control.server_mutex);
     while (server_control.num_client_threads)
