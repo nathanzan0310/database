@@ -1,3 +1,4 @@
+
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -89,11 +90,10 @@ void *run_client(void *arg) {
      * adding a client to the client list (see step 2 in `main`). If not,
      * destroy the passed-in client and return.
      */
-
     client_t *client = arg;
-    if (!server_accept_control.accepting) {
+    if (server_accept_control.accepting == 0) {
         client_destructor(client);
-        return (void *)-1;
+        return (void *) -1;
     }
 
     char response[BUFLEN];
@@ -111,18 +111,18 @@ void *run_client(void *arg) {
     client->prev = NULL;
     thread_list_head = client;
 
-    pthread_cleanup_push((void *)&thread_cleanup, &client_control.go_mutex);
-    pthread_mutex_unlock(&thread_list_mutex);
-    pthread_mutex_lock(&server_control.server_mutex);
-    server_control.num_client_threads++;
-    pthread_mutex_unlock(&server_control.server_mutex);
-    while (comm_serve(client->cxstr, response, command) == 0) {
-        client_control_wait();
-        interpret_command(command, response, BUFLEN);
-    }
-    int err;
-    if ((err = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0)))
-        handle_error_en(err, "pthread_setcancelstate");
+    pthread_cleanup_push((void *) &thread_cleanup, client);
+        pthread_mutex_unlock(&thread_list_mutex);
+        pthread_mutex_lock(&server_control.server_mutex);
+        server_control.num_client_threads++;
+        pthread_mutex_unlock(&server_control.server_mutex);
+        while (comm_serve(client->cxstr, response, command) == 0) {
+            client_control_wait();
+            interpret_command(command, response, BUFLEN);
+        }
+        int err;
+        if ((err = pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0)))
+            handle_error_en(err, "pthread_setcancelstate");
     pthread_cleanup_pop(1);
     return NULL;
 }
@@ -152,15 +152,18 @@ void thread_cleanup(void *arg) {
      * `thread_list_mutex`.
      */
     int err;
-    client_t *client = arg;
-
     pthread_mutex_lock(&thread_list_mutex);
+    client_t *client = arg;
+    client_t *next = client->next;
+    client_t *prev = client->prev;
     if (client == thread_list_head) {
-        thread_list_head = thread_list_head->next;
-        thread_list_head->prev = NULL;
-    } else {
-        if (client->prev != NULL) client->prev->next = client->next;
-        if (client->next != NULL) client->next->prev = client->prev;
+        thread_list_head = NULL;
+    }
+    if (next){
+        next->prev = prev;
+    }
+    if (prev){
+        prev->next = next;
     }
     pthread_mutex_unlock(&thread_list_mutex);
 
@@ -168,8 +171,9 @@ void thread_cleanup(void *arg) {
 
     pthread_mutex_lock(&server_control.server_mutex);
     server_control.num_client_threads--;
-    if ((err = pthread_cond_broadcast(&server_control.server_cond)))
-        handle_error_en(err, "pthread_cond_broadcast");
+    if (!server_control.num_client_threads)
+        if ((err = pthread_cond_broadcast(&server_control.server_cond)))
+            handle_error_en(err, "pthread_cond_broadcast");
     pthread_mutex_unlock(&server_control.server_mutex);
 }
 
@@ -207,13 +211,13 @@ void client_control_wait() {
      */
     int err;
     pthread_mutex_lock(&client_control.go_mutex);
-    pthread_cleanup_push((void *)&pthread_mutex_unlock,
+    pthread_cleanup_push((void *) &pthread_mutex_unlock,
                          &client_control.go_mutex);
-    while (!client_control.stopped) {
-        if ((err = pthread_cond_wait(&client_control.go,
-                                     &client_control.go_mutex)))
-            handle_error_en(err, "pthread_cond_wait");
-    }
+        while (!client_control.stopped) {
+            if ((err = pthread_cond_wait(&client_control.go,
+                                         &client_control.go_mutex)))
+                handle_error_en(err, "pthread_cond_wait");
+        }
     pthread_cleanup_pop(1);
 }
 
@@ -262,7 +266,7 @@ void *monitor_signal(void *arg) {
      */
     int sig = 0;
     while (1) {
-        if (sigwait((sigset_t *)arg, &sig)) {
+        if (sigwait((sigset_t *) arg, &sig)) {
             perror("sigwait");
             exit(1);
         }
@@ -281,7 +285,7 @@ sig_handler_t *sig_handler_constructor() {
      * (use `pthread_sigmask`!). Be sure to take a look at sig_hander_t in
      * server.h.
      */
-    sig_handler_t *sig_thread = malloc(sizeof(sig_handler_t));
+    sig_handler_t *sig_thread = (sig_handler_t *) malloc(sizeof(sig_handler_t));
     if (sig_thread == NULL) {
         perror("malloc failed");
         exit(1);
@@ -326,14 +330,14 @@ int main(int argc, char *argv[]) {
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGPIPE);
-    sig_handler_t *sig_handler = sig_handler_constructor();
-    if ((err = pthread_sigmask(SIG_BLOCK, &set, 0)) != 0) {
+    sig_handler_t* sig_handler = sig_handler_constructor();
+    if ((err = pthread_sigmask(SIG_BLOCK, &set, 0)) != 0)
         handle_error_en(err, "pthread_sigmask");
-    }
-    if (argc != 2) {
+    if(argc != 2) {
         fprintf(stderr, "Usage: %s <port number>\n", argv[0]);
+        exit(1);
     }
-    int port = (int)strtol(argv[1], 0, 10);
+    int port = (int) strtol(argv[1], 0, 10);
     pthread_t lThread = start_listener(port, &client_constructor);
 
     /*
@@ -341,18 +345,9 @@ int main(int argc, char *argv[]) {
      * and handle any print, stop, and go command requests.
      */
     char buf[BUFLEN];
-    ssize_t bytesRead = 1;
-    while (bytesRead > 0) {
-        memset(buf, 0, BUFLEN);
-        bytesRead = read(STDIN_FILENO, buf, BUFLEN);
-        buf[bytesRead] = '\0';
-        if (bytesRead == EOF) {
-            break;
-        }
-        if (bytesRead == -1) {
-            perror("read");
-            exit(0);
-        }
+    memset(buf, 0, BUFLEN);
+    ssize_t bytesRead;
+    while ((bytesRead = read(STDIN_FILENO, buf, BUFLEN)) > 0) {
         if (buf[0] == 'p') {
             char *file = strtok(&buf[1], " \t\n");
             db_print(file);
@@ -369,6 +364,7 @@ int main(int argc, char *argv[]) {
                 exit(0);
             }
         }
+        memset(buf, 0, BUFLEN);
     }
     /*
      * Part 3C:
@@ -386,44 +382,40 @@ int main(int argc, char *argv[]) {
      * list is empty, cleanup the database, and then cancel and join with the
      * listener thread.
      */
-
-    //// Code only reaches here if bytesRead == 0
     if (bytesRead == EOF) {
         server_accept_control.accepting = 0;
-        delete_all();
         if (printf("Zero client connections, cleaning up database\n") < 0) {
             perror("printf");
             exit(0);
         }
-
-        pthread_mutex_lock(&server_control.server_mutex);
-        while (server_control.num_client_threads)
-            if (pthread_cond_wait(&server_control.server_cond,
-                                  &server_control.server_mutex))
-                handle_error_en(errno, "pthread_cond_wait");
-        pthread_mutex_unlock(&server_control.server_mutex);
-
-        db_cleanup();
-        if (printf("Database clean complete\n") < 0) {
-            perror("printf");
-            exit(0);
-        }
-        if (pthread_cancel(lThread)) handle_error_en(errno, "pthread_cancel");
-        if (pthread_join(lThread, 0)) handle_error_en(errno, "pthread_join");
-        if (pthread_mutex_destroy(&server_control.server_mutex))
-            handle_error_en(errno, "pthread_mutex_destroy");
-        if (pthread_cond_destroy(&server_control.server_cond))
-            handle_error_en(errno, "pthread_cond_destroy");
-        if (pthread_mutex_destroy(&client_control.go_mutex))
-            handle_error_en(errno, "pthread_mutex_destroy");
-        if (pthread_cond_destroy(&client_control.go))
-            handle_error_en(errno, "pthread_cond_destroy");
-        if (pthread_mutex_destroy(&thread_list_mutex))
-            handle_error_en(errno, "pthread_mutex_destroy");
     }
-    //    pthread_exit(0);
+    delete_all();
+    pthread_mutex_lock(&server_control.server_mutex);
+    while (server_control.num_client_threads)
+        if (pthread_cond_wait(&server_control.server_cond,
+                              &server_control.server_mutex))
+            handle_error_en(errno, "pthread_cond_wait");
+    pthread_mutex_unlock(&server_control.server_mutex);
+    db_cleanup();
+    if (printf("Database clean complete\n") < 0) {
+        perror("printf");
+        exit(0);
+    }
+    if (pthread_cancel(lThread)) handle_error_en(errno, "pthread_cancel");
+    if (pthread_join(lThread, 0)) handle_error_en(errno, "pthread_join");
+    if (pthread_mutex_destroy(&server_control.server_mutex))
+        handle_error_en(errno, "pthread_mutex_destroy");
+    if (pthread_cond_destroy(&server_control.server_cond))
+        handle_error_en(errno, "pthread_cond_destroy");
+    if (pthread_mutex_destroy(&client_control.go_mutex))
+        handle_error_en(errno, "pthread_mutex_destroy");
+    if (pthread_cond_destroy(&client_control.go))
+        handle_error_en(errno, "pthread_cond_destroy");
+    if (pthread_mutex_destroy(&thread_list_mutex))
+        handle_error_en(errno, "pthread_mutex_destroy");
     sig_handler_destructor(sig_handler);
-    return 0;
+    pthread_exit(0);
+
     /*
      * Part 3D:
      *  Step 1. After blocking SIGPIPE, create a SIGINT signal handler using
