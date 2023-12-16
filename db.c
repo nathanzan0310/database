@@ -22,11 +22,8 @@ void lock(pthread_rwlock_t *rwlock, enum locktype lt) {
     if (lt == l_read) {
         if ((err = pthread_rwlock_rdlock(rwlock)))
             handle_error_en(err, "pthread_rwlock_rdlock");
-    } else {
-        if ((err = pthread_rwlock_wrlock(rwlock))) {
-            handle_error_en(err, "pthread_rwlock_wrlock");
-        }
-    }
+    } else if ((err = pthread_rwlock_wrlock(rwlock)))
+        handle_error_en(err, "pthread_rwlock_wrlock");
 }
 
 //------------------------------------------------------------------------------------------------
