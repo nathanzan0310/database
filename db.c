@@ -126,7 +126,7 @@ node_t *search(char *key, node_t *parent, node_t **parentpp, enum locktype lt) {
         } else {
             if ((err = pthread_rwlock_unlock(&parent->rw_lock)))
                 handle_error_en(err, "pthread_rwlock_unlock");
-            return search(key, next, parentpp, 0);
+            return search(key, next, parentpp, lt);
         }
     }
 

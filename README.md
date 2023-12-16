@@ -22,8 +22,7 @@ Signature Changes: I changed the signature of search to include read or write lo
 enum locktype: I defined a new enum locktype in db.h that can take either l_read = 0 or l_write = 1. This is used in
                the lock helper function.
 
-Bugs: There is a double free error when I run adict_deletes after adict with multiple clients. I ran it through gdb, and it says it fails in
-dnode destructor, but I wasn't able to figure out why.
+Bugs: None to the best of my knowledge.
 
 Program structure: I implemented fine-grained locking in db.c. I also implemented the required functions in server.c
 in a way that is threadsafe. In main of server.c, I blocked SIGPIPE and set up the listener and signal thread before I 
